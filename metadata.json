@@ -1,0 +1,6 @@
+{
+  "name": "Hisab AI",
+  "description": "AI-Powered Personal Finance & Expense Management System with conversational expense entry in Bangla and English, receipt scanning, budgets, and analytics.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
