@@ -26,7 +26,9 @@ import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.PieChart
+import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.Receipt
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.TrendingUp
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -36,11 +38,14 @@ import androidx.compose.material3.ElevatedFilterChip
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -82,6 +87,16 @@ fun DashboardScreen(
 
     val currency = profile?.currencySymbol ?: "৳"
     val monthlyBudget = profile?.monthlyBudget ?: 35000.0
+    val aiBudgetAdvice by viewModel.aiBudgetAdvice.collectAsState()
+
+    val nowCal = Calendar.getInstance()
+    val totalDaysInMonth = nowCal.getActualMaximum(Calendar.DAY_OF_MONTH)
+    val currentDayInMonth = nowCal.get(Calendar.DAY_OF_MONTH)
+    val remainingDays = maxOf(1, totalDaysInMonth - currentDayInMonth + 1)
+
+    LaunchedEffect(Unit) {
+        viewModel.refreshAiBudgetAdvice()
+    }
 
     // Filter transactions based on date filter
     val filteredTransactions = allTransactions.filter { tx ->
@@ -354,6 +369,167 @@ fun DashboardScreen(
                         color = if (budgetProgress > 0.9f) ExpenseRose else EmeraldDark,
                         trackColor = MaterialTheme.colorScheme.surfaceVariant
                     )
+                }
+            }
+        }
+
+        // AI Budget & Expense Advisor Card
+        item {
+            val safeDailyBudget = if (remainingBudget > 0) remainingBudget / remainingDays else 0.0
+            val todaySpent = allTransactions.filter { tx ->
+                val tCal = Calendar.getInstance().apply { timeInMillis = tx.transaction.transactionDate }
+                tCal.get(Calendar.DAY_OF_YEAR) == nowCal.get(Calendar.DAY_OF_YEAR) &&
+                tCal.get(Calendar.YEAR) == nowCal.get(Calendar.YEAR) &&
+                tx.transaction.transactionType == TransactionType.EXPENSE.name
+            }.sumOf { it.transaction.totalAmount }
+
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("ai_advisor_card")
+                    .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.4f), RoundedCornerShape(16.dp)),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .clip(CircleShape)
+                                    .background(EmeraldDark.copy(alpha = 0.12f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Psychology,
+                                    contentDescription = null,
+                                    tint = EmeraldDark,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Column {
+                                Text(
+                                    text = "স্মার্ট বাজেট ও খরচ অ্যাডভাইজার",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = "মাসিক বাজেট ও বর্তমান ব্যয়ের ভিত্তিতে পরামর্শ",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+
+                        IconButton(
+                            onClick = { viewModel.refreshAiBudgetAdvice() },
+                            modifier = Modifier.size(36.dp).testTag("btn_refresh_advisor")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Refresh,
+                                contentDescription = "Refresh Advice",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Surface(
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(10.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+                        ) {
+                            Column(modifier = Modifier.padding(10.dp)) {
+                                Text(
+                                    text = "দৈনিক নিরাপদ সীমা",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Text(
+                                    text = "$currency${formatDouble(safeDailyBudget)}/দিন",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = EmeraldDark
+                                )
+                            }
+                        }
+
+                        Surface(
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(10.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+                        ) {
+                            Column(modifier = Modifier.padding(10.dp)) {
+                                Text(
+                                    text = "আজকের খরচ",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Text(
+                                    text = "$currency${formatDouble(todaySpent)}",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (todaySpent > safeDailyBudget && safeDailyBudget > 0) ExpenseRose else EmeraldDark
+                                )
+                            }
+                        }
+
+                        Surface(
+                            modifier = Modifier.weight(0.9f),
+                            shape = RoundedCornerShape(10.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+                        ) {
+                            Column(modifier = Modifier.padding(10.dp)) {
+                                Text(
+                                    text = "বাকি দিন",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Text(
+                                    text = "$remainingDays দিন",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
+                    }
+
+                    if (!aiBudgetAdvice.isNullOrBlank()) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.25f),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(modifier = Modifier.padding(12.dp)) {
+                                Icon(
+                                    imageVector = Icons.Default.AutoAwesome,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = aiBudgetAdvice ?: "",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                        }
+                    }
                 }
             }
         }

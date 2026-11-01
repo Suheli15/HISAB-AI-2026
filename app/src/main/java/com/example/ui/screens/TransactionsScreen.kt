@@ -47,13 +47,17 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.data.model.TransactionEntity
+import com.example.data.model.TransactionItemEntity
 import com.example.data.model.TransactionType
+import com.example.data.model.TransactionWithItems
 import com.example.ui.components.TransactionRow
 import com.example.ui.theme.EmeraldDark
 import com.example.ui.viewmodel.HisabViewModel
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.UUID
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -70,6 +74,7 @@ fun TransactionsScreen(
     var searchQuery by remember { mutableStateOf("") }
     var selectedType by remember { mutableStateOf("ALL") }
     var showAddDialog by remember { mutableStateOf(false) }
+    var editingTxWithItems by remember { mutableStateOf<TransactionWithItems?>(null) }
 
     val filteredList = allTransactions.filter { txWithItems ->
         val tx = txWithItems.transaction
@@ -202,6 +207,7 @@ fun TransactionsScreen(
                         TransactionRow(
                             txWithItems = tx,
                             currencySymbol = currency,
+                            onEdit = { editingTxWithItems = tx },
                             onDelete = { viewModel.deleteTransaction(tx.transaction.id) }
                         )
                     }
@@ -307,6 +313,144 @@ fun TransactionsScreen(
             },
             dismissButton = {
                 OutlinedButton(onClick = { showAddDialog = false }) {
+                    Text("বাতিল")
+                }
+            }
+        )
+    }
+
+    // Edit Transaction Dialog
+    editingTxWithItems?.let { target ->
+        val origTx = target.transaction
+        var editType by remember(target.transaction.id) { mutableStateOf(origTx.transactionType) }
+        var editAmount by remember(target.transaction.id) { mutableStateOf(origTx.totalAmount.toString()) }
+        var editShop by remember(target.transaction.id) { mutableStateOf(origTx.shopName ?: "") }
+        var editCategory by remember(target.transaction.id) { mutableStateOf(origTx.categoryName ?: "General") }
+        var editPayment by remember(target.transaction.id) { mutableStateOf(origTx.paymentMethod) }
+        var editNotes by remember(target.transaction.id) { mutableStateOf(origTx.notes) }
+        var editDate by remember(target.transaction.id) { mutableStateOf(origTx.dateString) }
+
+        AlertDialog(
+            onDismissRequest = { editingTxWithItems = null },
+            title = { Text("লেনদেন সম্পাদনা করুন") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Button(
+                            onClick = { editType = "EXPENSE" },
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (editType == "EXPENSE") MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.surfaceVariant
+                            )
+                        ) {
+                            Text("ব্যয়", color = if (editType == "EXPENSE") androidx.compose.ui.graphics.Color.White else MaterialTheme.colorScheme.onSurface)
+                        }
+
+                        Button(
+                            onClick = { editType = "INCOME" },
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (editType == "INCOME") EmeraldDark else MaterialTheme.colorScheme.surfaceVariant
+                            )
+                        ) {
+                            Text("আয়", color = if (editType == "INCOME") androidx.compose.ui.graphics.Color.White else MaterialTheme.colorScheme.onSurface)
+                        }
+                    }
+
+                    OutlinedTextField(
+                        value = editAmount,
+                        onValueChange = { editAmount = it },
+                        label = { Text("পরিমাণ ($currency)") },
+                        modifier = Modifier.fillMaxWidth().testTag("input_edit_amount"),
+                        singleLine = true
+                    )
+
+                    OutlinedTextField(
+                        value = editShop,
+                        onValueChange = { editShop = it },
+                        label = { Text("দোকান / প্রতিষ্ঠান") },
+                        modifier = Modifier.fillMaxWidth().testTag("input_edit_shop"),
+                        singleLine = true
+                    )
+
+                    OutlinedTextField(
+                        value = editNotes,
+                        onValueChange = { editNotes = it },
+                        label = { Text("বিবরণ / নোট") },
+                        modifier = Modifier.fillMaxWidth().testTag("input_edit_notes")
+                    )
+
+                    OutlinedTextField(
+                        value = editDate,
+                        onValueChange = { editDate = it },
+                        label = { Text("তারিখ (YYYY-MM-DD)") },
+                        modifier = Modifier.fillMaxWidth().testTag("input_edit_date")
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val parsedAmt = editAmount.toDoubleOrNull() ?: origTx.totalAmount
+                        val txDateMillis = try {
+                            SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).parse(editDate)?.time ?: origTx.transactionDate
+                        } catch (e: Exception) {
+                            origTx.transactionDate
+                        }
+
+                        val updatedTx = origTx.copy(
+                            transactionType = editType,
+                            totalAmount = parsedAmt,
+                            shopName = editShop.takeIf { it.isNotBlank() },
+                            categoryName = editCategory,
+                            paymentMethod = editPayment,
+                            notes = editNotes,
+                            dateString = editDate,
+                            transactionDate = txDateMillis
+                        )
+
+                        // Update transaction items proportionately or adjust single item
+                        val updatedItems = if (target.items.isEmpty()) {
+                            listOf(
+                                TransactionItemEntity(
+                                    id = UUID.randomUUID().toString(),
+                                    transactionId = updatedTx.id,
+                                    itemName = editNotes.ifBlank { editCategory },
+                                    normalizedItemName = (editNotes.ifBlank { editCategory }).trim().lowercase(),
+                                    quantity = 1.0,
+                                    unit = "pcs",
+                                    unitPrice = parsedAmt,
+                                    totalPrice = parsedAmt,
+                                    categoryName = editCategory
+                                )
+                            )
+                        } else if (target.items.size == 1) {
+                            listOf(
+                                target.items[0].copy(
+                                    itemName = editNotes.ifBlank { target.items[0].itemName },
+                                    unitPrice = parsedAmt,
+                                    totalPrice = parsedAmt,
+                                    categoryName = editCategory
+                                )
+                            )
+                        } else {
+                            // Multiple items, preserve their details
+                            target.items
+                        }
+
+                        viewModel.updateExistingTransaction(updatedTx, updatedItems)
+                        editingTxWithItems = null
+                    },
+                    modifier = Modifier.testTag("btn_save_edit_tx")
+                ) {
+                    Text("আপডেট করুন")
+                }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { editingTxWithItems = null }) {
                     Text("বাতিল")
                 }
             }

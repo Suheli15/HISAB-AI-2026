@@ -17,6 +17,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CallMerge
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.ShoppingBag
 import androidx.compose.material3.AlertDialog
@@ -42,6 +43,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ui.components.formatDouble
+import com.example.ui.theme.ExpenseRose
 import com.example.ui.viewmodel.HisabViewModel
 
 data class ItemAggregate(
@@ -68,6 +70,7 @@ fun ItemsProductsScreen(
     var searchQuery by remember { mutableStateOf("") }
     var itemToMerge by remember { mutableStateOf<ItemAggregate?>(null) }
     var mergeTargetName by remember { mutableStateOf("") }
+    var itemToDelete by remember { mutableStateOf<ItemAggregate?>(null) }
 
     // Aggregate items by normalized name
     val aggregated = items.groupBy { it.normalizedItemName }
@@ -206,19 +209,32 @@ fun ItemsProductsScreen(
                                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
                                 )
 
-                                IconButton(
-                                    onClick = {
-                                        itemToMerge = agg
-                                        mergeTargetName = agg.displayName
-                                    },
-                                    modifier = Modifier.size(32.dp)
-                                ) {
-                                    Icon(
-                                        Icons.Default.CallMerge,
-                                        contentDescription = "Merge Duplicate Item",
-                                        tint = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.size(16.dp)
-                                    )
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    IconButton(
+                                        onClick = {
+                                            itemToMerge = agg
+                                            mergeTargetName = agg.displayName
+                                        },
+                                        modifier = Modifier.size(32.dp)
+                                    ) {
+                                        Icon(
+                                            Icons.Default.CallMerge,
+                                            contentDescription = "Merge Duplicate Item",
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+                                    IconButton(
+                                        onClick = { itemToDelete = agg },
+                                        modifier = Modifier.size(32.dp)
+                                    ) {
+                                        Icon(
+                                            Icons.Default.Delete,
+                                            contentDescription = "Delete Item",
+                                            tint = ExpenseRose,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -263,6 +279,39 @@ fun ItemsProductsScreen(
             },
             dismissButton = {
                 OutlinedButton(onClick = { itemToMerge = null }) {
+                    Text("বাতিল")
+                }
+            }
+        )
+    }
+
+    // Delete Confirmation Dialog
+    itemToDelete?.let { target ->
+        AlertDialog(
+            onDismissRequest = { itemToDelete = null },
+            title = { Text("পণ্য মুছে ফেলুন") },
+            text = {
+                Text(
+                    text = "আপনি কি নিশ্চিতভাবে \"${target.displayName}\" পণ্যটির সকল রেকর্ড মুছে ফেলতে চান?",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.deleteItemByNormalizedName(target.normalizedName)
+                        itemToDelete = null
+                    },
+                    colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                        containerColor = ExpenseRose
+                    ),
+                    modifier = Modifier.testTag("btn_confirm_delete_item")
+                ) {
+                    Text("মুছে ফেলুন", color = androidx.compose.ui.graphics.Color.White)
+                }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { itemToDelete = null }) {
                     Text("বাতিল")
                 }
             }

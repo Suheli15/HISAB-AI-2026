@@ -23,6 +23,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AddAPhoto
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Receipt
 import androidx.compose.material3.Button
@@ -31,6 +32,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
@@ -42,6 +44,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -58,9 +61,11 @@ fun ReceiptScannerScreen(
 ) {
     val receipts by viewModel.receipts.collectAsState()
     val scannedReceipt by viewModel.scannedReceipt.collectAsState()
+    val scannedItems by viewModel.scannedItems.collectAsState()
     val isScanning by viewModel.isScanning.collectAsState()
     val profile by viewModel.profile.collectAsState()
     val currency = profile?.currencySymbol ?: "৳"
+    val context = LocalContext.current
 
     var selectedImageUri by remember { mutableStateOf<Uri?>(null) }
 
@@ -70,7 +75,7 @@ fun ReceiptScannerScreen(
     ) { uri: Uri? ->
         if (uri != null) {
             selectedImageUri = uri
-            viewModel.simulateReceiptScan(uri)
+            viewModel.scanReceiptWithGemini(uri, context)
         }
     }
 
@@ -118,33 +123,21 @@ fun ReceiptScannerScreen(
 
                     Spacer(modifier = Modifier.height(16.dp))
 
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    Button(
+                        onClick = {
+                            photoPickerLauncher.launch(
+                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                            )
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = EmeraldDark),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("btn_pick_receipt_image")
                     ) {
-                        Button(
-                            onClick = {
-                                photoPickerLauncher.launch(
-                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                                )
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = EmeraldDark),
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.testTag("btn_pick_receipt_image")
-                        ) {
-                            Icon(Icons.Default.PhotoLibrary, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("গ্যালারি থেকে ছবি নিন")
-                        }
-
-                        OutlinedButton(
-                            onClick = {
-                                viewModel.simulateReceiptScan(null)
-                            },
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.testTag("btn_sample_receipt_scan")
-                        ) {
-                            Text("নমুনা মেমো স্ক্যান")
-                        }
+                        Icon(Icons.Default.PhotoLibrary, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("রসিদ বা মেমোর ছবি নির্বাচন করুন")
                     }
                 }
             }
@@ -235,22 +228,41 @@ fun ReceiptScannerScreen(
                         )
                         Spacer(modifier = Modifier.height(6.dp))
 
-                        // Sample line items
-                        val detected = listOf(
-                            "1. চাল / Rice 5kg" to 650.0,
-                            "2. সয়াবিন তেল / Oil 2L" to 380.0,
-                            "3. ডিম / Eggs 1 Dozen" to 140.0,
-                            "4. মসলা ও টুকিটাকি" to 280.0
-                        )
-                        detected.forEach { (name, price) ->
+                        if (scannedItems.isNotEmpty()) {
+                            scannedItems.forEach { item ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 3.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text(
+                                        text = "• ${item.itemName} (${item.quantity} ${item.unit})",
+                                        style = MaterialTheme.typography.bodyMedium
+                                    )
+                                    Text(
+                                        text = "$currency${formatDouble(item.totalPrice)}",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                }
+                            }
+                        } else {
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .padding(vertical = 3.dp),
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
-                                Text(name, style = MaterialTheme.typography.bodyMedium)
-                                Text("$currency${formatDouble(price)}", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                                Text(
+                                    text = "• সামগ্রিক ক্রয় হিসাব",
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                                Text(
+                                    text = "$currency${formatDouble(r.totalAmount)}",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.SemiBold
+                                )
                             }
                         }
 
@@ -261,7 +273,7 @@ fun ReceiptScannerScreen(
                             horizontalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
                             Button(
-                                onClick = { viewModel.saveReceiptAsTransaction(r) },
+                                onClick = { viewModel.saveReceiptAsTransaction(r, scannedItems) },
                                 modifier = Modifier
                                     .weight(1f)
                                     .testTag("btn_save_receipt_transaction"),
@@ -344,12 +356,26 @@ fun ReceiptScannerScreen(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
-                        Text(
-                            text = "$currency${formatDouble(rec.totalAmount)}",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary
-                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = "$currency${formatDouble(rec.totalAmount)}",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            IconButton(
+                                onClick = { viewModel.deleteReceipt(rec.id) },
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.Delete,
+                                    contentDescription = "Delete Receipt",
+                                    tint = ExpenseRose,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
                     }
                 }
             }

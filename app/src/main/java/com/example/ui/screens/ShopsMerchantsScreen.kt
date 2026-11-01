@@ -18,6 +18,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Store
 import androidx.compose.material3.AlertDialog
@@ -45,6 +46,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.data.model.ShopEntity
 import com.example.ui.components.formatDouble
 import com.example.ui.theme.EmeraldDark
 import com.example.ui.theme.ExpenseRose
@@ -61,6 +63,7 @@ fun ShopsMerchantsScreen(
 
     var searchQuery by remember { mutableStateOf("") }
     var showAddShopDialog by remember { mutableStateOf(false) }
+    var editingShop by remember { mutableStateOf<ShopEntity?>(null) }
 
     val filtered = shops.filter {
         searchQuery.isBlank() || it.name.lowercase().contains(searchQuery.lowercase().trim())
@@ -177,16 +180,29 @@ fun ShopsMerchantsScreen(
                                     }
                                 }
 
-                                IconButton(
-                                    onClick = { viewModel.deleteShop(shop.id) },
-                                    modifier = Modifier.size(36.dp)
-                                ) {
-                                    Icon(
-                                        Icons.Default.Delete,
-                                        contentDescription = "Delete",
-                                        tint = ExpenseRose,
-                                        modifier = Modifier.size(18.dp)
-                                    )
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    IconButton(
+                                        onClick = { editingShop = shop },
+                                        modifier = Modifier.size(36.dp)
+                                    ) {
+                                        Icon(
+                                            Icons.Default.Edit,
+                                            contentDescription = "Edit Shop",
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                    IconButton(
+                                        onClick = { viewModel.deleteShop(shop.id) },
+                                        modifier = Modifier.size(36.dp)
+                                    ) {
+                                        Icon(
+                                            Icons.Default.Delete,
+                                            contentDescription = "Delete",
+                                            tint = ExpenseRose,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -241,6 +257,65 @@ fun ShopsMerchantsScreen(
             },
             dismissButton = {
                 OutlinedButton(onClick = { showAddShopDialog = false }) {
+                    Text("বাতিল")
+                }
+            }
+        )
+    }
+
+    // Edit Shop Dialog
+    editingShop?.let { targetShop ->
+        var editName by remember(targetShop.id) { mutableStateOf(targetShop.name) }
+        var editAddress by remember(targetShop.id) { mutableStateOf(targetShop.address) }
+        var editPhone by remember(targetShop.id) { mutableStateOf(targetShop.phone) }
+
+        AlertDialog(
+            onDismissRequest = { editingShop = null },
+            title = { Text("দোকানের তথ্য সম্পাদনা করুন") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    OutlinedTextField(
+                        value = editName,
+                        onValueChange = { editName = it },
+                        label = { Text("দোকানের নাম") },
+                        modifier = Modifier.fillMaxWidth().testTag("input_edit_shop_name"),
+                        singleLine = true
+                    )
+                    OutlinedTextField(
+                        value = editAddress,
+                        onValueChange = { editAddress = it },
+                        label = { Text("ঠিকানা") },
+                        modifier = Modifier.fillMaxWidth().testTag("input_edit_shop_address")
+                    )
+                    OutlinedTextField(
+                        value = editPhone,
+                        onValueChange = { editPhone = it },
+                        label = { Text("ফোন নম্বর") },
+                        modifier = Modifier.fillMaxWidth().testTag("input_edit_shop_phone")
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (editName.isNotBlank()) {
+                            val updated = targetShop.copy(
+                                name = editName,
+                                normalizedName = editName.trim().lowercase(),
+                                address = editAddress,
+                                phone = editPhone
+                            )
+                            viewModel.updateShop(updated)
+                            editingShop = null
+                        }
+                    },
+                    modifier = Modifier.testTag("btn_save_edit_shop")
+                ) {
+                    Text("আপডেট করুন")
+                }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { editingShop = null }) {
                     Text("বাতিল")
                 }
             }

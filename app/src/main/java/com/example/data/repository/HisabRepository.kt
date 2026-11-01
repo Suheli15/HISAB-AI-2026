@@ -123,10 +123,69 @@ class HisabRepository(private val dao: HisabDao) {
         }
     }
 
+    suspend fun updateFullTransaction(
+        updatedTx: TransactionEntity,
+        newItems: List<TransactionItemEntity>
+    ) {
+        val old = dao.getTransactionWithItems(updatedTx.id)
+        if (old != null) {
+            val oldTx = old.transaction
+            // Revert old balance adjustment
+            if (!oldTx.accountId.isNullOrBlank()) {
+                when (oldTx.transactionType) {
+                    TransactionType.EXPENSE.name -> dao.adjustAccountBalance(oldTx.accountId, oldTx.totalAmount)
+                    TransactionType.INCOME.name -> dao.adjustAccountBalance(oldTx.accountId, -oldTx.totalAmount)
+                    TransactionType.TRANSFER.name -> {
+                        dao.adjustAccountBalance(oldTx.accountId, oldTx.totalAmount)
+                        if (!oldTx.destinationAccountId.isNullOrBlank()) {
+                            dao.adjustAccountBalance(oldTx.destinationAccountId, -oldTx.totalAmount)
+                        }
+                    }
+                }
+            }
+        }
+
+        // Save updated
+        dao.insertTransaction(updatedTx)
+        dao.deleteTransactionItems(updatedTx.id)
+        if (newItems.isNotEmpty()) {
+            val assigned = newItems.map { it.copy(transactionId = updatedTx.id, normalizedItemName = it.itemName.trim().lowercase()) }
+            dao.insertTransactionItems(assigned)
+        }
+
+        // Apply new balance adjustment
+        if (!updatedTx.accountId.isNullOrBlank()) {
+            when (updatedTx.transactionType) {
+                TransactionType.EXPENSE.name -> dao.adjustAccountBalance(updatedTx.accountId, -updatedTx.totalAmount)
+                TransactionType.INCOME.name -> dao.adjustAccountBalance(updatedTx.accountId, updatedTx.totalAmount)
+                TransactionType.TRANSFER.name -> {
+                    dao.adjustAccountBalance(updatedTx.accountId, -updatedTx.totalAmount)
+                    if (!updatedTx.destinationAccountId.isNullOrBlank()) {
+                        dao.adjustAccountBalance(updatedTx.destinationAccountId, updatedTx.totalAmount)
+                    }
+                }
+            }
+        }
+    }
+
     // Items
     val allItems: Flow<List<TransactionItemEntity>> = dao.getAllTransactionItems()
     suspend fun mergeItems(oldNormalized: String, newNormalized: String, newName: String) {
         dao.mergeItemNames(oldNormalized, newNormalized, newName)
+    }
+
+    suspend fun deleteItemsByNormalizedName(normalizedName: String) {
+        dao.deleteItemsByNormalizedName(normalizedName)
+    }
+
+    suspend fun clearAllFinancialData() {
+        dao.clearAllTransactions()
+        dao.clearAllTransactionItems()
+        dao.clearAllShops()
+        dao.clearAllBudgets()
+        dao.clearAllReceipts()
+        dao.resetAccountBalances()
+        dao.clearAiMessages()
     }
 
     // Budgets

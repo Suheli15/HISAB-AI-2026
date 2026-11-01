@@ -19,6 +19,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountBalance
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.Person
@@ -49,6 +50,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.data.model.AccountEntity
 import com.example.ui.components.formatDouble
 import com.example.ui.theme.EmeraldDark
 import com.example.ui.theme.ExpenseRose
@@ -70,6 +72,8 @@ fun SettingsScreen(
     var selectedLanguage by remember(profile) { mutableStateOf(profile?.language ?: "bn") }
 
     var showAddAccountDialog by remember { mutableStateOf(false) }
+    var editingAccount by remember { mutableStateOf<AccountEntity?>(null) }
+    var showClearAllDialog by remember { mutableStateOf(false) }
 
     LazyColumn(
         modifier = modifier
@@ -258,15 +262,24 @@ fun SettingsScreen(
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Column {
+                            Column(modifier = Modifier.weight(1f)) {
                                 Text(acc.name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
                                 Text("${acc.type} • $selectedSymbol${formatDouble(acc.balance)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
-                            IconButton(
-                                onClick = { viewModel.deleteAccount(acc.id) },
-                                modifier = Modifier.size(28.dp)
-                            ) {
-                                Icon(Icons.Default.Delete, contentDescription = "Delete", tint = ExpenseRose, modifier = Modifier.size(16.dp))
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                IconButton(
+                                    onClick = { editingAccount = acc },
+                                    modifier = Modifier.size(28.dp).testTag("edit_acc_${acc.id}")
+                                ) {
+                                    Icon(Icons.Default.Edit, contentDescription = "Edit Account", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
+                                }
+                                Spacer(modifier = Modifier.width(4.dp))
+                                IconButton(
+                                    onClick = { viewModel.deleteAccount(acc.id) },
+                                    modifier = Modifier.size(28.dp).testTag("delete_acc_${acc.id}")
+                                ) {
+                                    Icon(Icons.Default.Delete, contentDescription = "Delete", tint = ExpenseRose, modifier = Modifier.size(16.dp))
+                                }
                             }
                         }
                     }
@@ -274,16 +287,29 @@ fun SettingsScreen(
             }
         }
 
-        // Demo data reset
+        // Data Reset & Cleanup (No Demo Mode)
         item {
-            OutlinedButton(
-                onClick = { viewModel.resetDemoData() },
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp)
-            ) {
-                Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("ডিফল্ট ডেমো ক্যাটাগরি ও ডাটা রিসেট করুন")
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Button(
+                    onClick = { showClearAllDialog = true },
+                    modifier = Modifier.fillMaxWidth().testTag("btn_clear_all_data"),
+                    colors = ButtonDefaults.buttonColors(containerColor = ExpenseRose),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("সকল আর্থিক ডাটা মুছে ফেলুন (Clear All Data)")
+                }
+
+                OutlinedButton(
+                    onClick = { viewModel.resetDemoData() },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("ডিফল্ট ক্যাটাগরি পুনরুদ্ধার করুন")
+                }
             }
         }
     }
@@ -336,6 +362,93 @@ fun SettingsScreen(
             },
             dismissButton = {
                 OutlinedButton(onClick = { showAddAccountDialog = false }) {
+                    Text("বাতিল")
+                }
+            }
+        )
+    }
+
+    // Edit Account Dialog
+    editingAccount?.let { targetAcc ->
+        var editName by remember(targetAcc.id) { mutableStateOf(targetAcc.name) }
+        var editType by remember(targetAcc.id) { mutableStateOf(targetAcc.type) }
+        var editBalance by remember(targetAcc.id) { mutableStateOf(targetAcc.balance.toString()) }
+
+        AlertDialog(
+            onDismissRequest = { editingAccount = null },
+            title = { Text("একাউন্ট সম্পাদনা করুন") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    OutlinedTextField(
+                        value = editName,
+                        onValueChange = { editName = it },
+                        label = { Text("একাউন্টের নাম") },
+                        modifier = Modifier.fillMaxWidth().testTag("input_edit_acc_name"),
+                        singleLine = true
+                    )
+                    OutlinedTextField(
+                        value = editType,
+                        onValueChange = { editType = it },
+                        label = { Text("টাইপ (CASH, BANK, BKASH, NAGAD, CARD)") },
+                        modifier = Modifier.fillMaxWidth().testTag("input_edit_acc_type"),
+                        singleLine = true
+                    )
+                    OutlinedTextField(
+                        value = editBalance,
+                        onValueChange = { editBalance = it },
+                        label = { Text("বর্তমান ব্যালেন্স ($selectedSymbol)") },
+                        modifier = Modifier.fillMaxWidth().testTag("input_edit_acc_balance"),
+                        singleLine = true
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val parsed = editBalance.toDoubleOrNull() ?: targetAcc.balance
+                        if (editName.isNotBlank()) {
+                            viewModel.updateAccount(targetAcc.copy(name = editName, type = editType, balance = parsed))
+                            editingAccount = null
+                        }
+                    },
+                    modifier = Modifier.testTag("btn_save_edit_acc")
+                ) {
+                    Text("আপডেট করুন")
+                }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { editingAccount = null }) {
+                    Text("বাতিল")
+                }
+            }
+        )
+    }
+
+    // Clear All Data Confirmation Dialog
+    if (showClearAllDialog) {
+        AlertDialog(
+            onDismissRequest = { showClearAllDialog = false },
+            title = { Text("সকল ডাটা মুছে ফেলার নিশ্চিতকরণ") },
+            text = {
+                Text(
+                    text = "আপনি কি নিশ্চিতভাবে আপনার সকল লেনদেন, রসিদ, বাজেট ও ব্যালেন্স মুছে ফেলে নতুন করে শুরু করতে চান? এই প্রক্রিয়াটি অপরিবর্তনীয়।",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.clearAllUserData()
+                        showClearAllDialog = false
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = ExpenseRose),
+                    modifier = Modifier.testTag("btn_confirm_clear_all")
+                ) {
+                    Text("হ্যাঁ, সব মুছে ফেলুন", color = androidx.compose.ui.graphics.Color.White)
+                }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { showClearAllDialog = false }) {
                     Text("বাতিল")
                 }
             }

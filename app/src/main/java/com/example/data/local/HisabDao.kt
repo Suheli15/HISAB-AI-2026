@@ -168,4 +168,31 @@ interface HisabDao {
 
     @Query("DELETE FROM ai_messages WHERE id = :id")
     suspend fun deleteAiMessage(id: String)
+
+    @Query("DELETE FROM transaction_items WHERE id = :id")
+    suspend fun deleteTransactionItemById(id: String)
+
+    @Query("DELETE FROM transaction_items WHERE normalizedItemName = :normalizedName")
+    suspend fun deleteItemsByNormalizedName(normalizedName: String)
+
+    @Query("UPDATE transaction_items SET itemName = :newName, unitPrice = :price, totalPrice = quantity * :price WHERE id = :id")
+    suspend fun updateTransactionItem(id: String, newName: String, price: Double)
+
+    @Query("DELETE FROM transactions")
+    suspend fun clearAllTransactions()
+
+    @Query("DELETE FROM transaction_items")
+    suspend fun clearAllTransactionItems()
+
+    @Query("DELETE FROM shops")
+    suspend fun clearAllShops()
+
+    @Query("DELETE FROM budgets")
+    suspend fun clearAllBudgets()
+
+    @Query("DELETE FROM receipts")
+    suspend fun clearAllReceipts()
+
+    @Query("UPDATE accounts SET balance = 0.0")
+    suspend fun resetAccountBalances()
 }

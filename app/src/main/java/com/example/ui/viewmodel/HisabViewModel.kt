@@ -1,6 +1,8 @@
 package com.example.ui.viewmodel
 
 import android.app.Application
+import android.content.Context
+import android.graphics.BitmapFactory
 import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -115,8 +117,15 @@ class HisabViewModel(application: Application) : AndroidViewModel(application) {
     private val _scannedReceipt = MutableStateFlow<ReceiptEntity?>(null)
     val scannedReceipt = _scannedReceipt.asStateFlow()
 
+    private val _scannedItems = MutableStateFlow<List<TransactionItemEntity>>(emptyList())
+    val scannedItems = _scannedItems.asStateFlow()
+
     private val _isScanning = MutableStateFlow(false)
     val isScanning = _isScanning.asStateFlow()
+
+    // Financial Budget Advisor State
+    private val _aiBudgetAdvice = MutableStateFlow<String?>(null)
+    val aiBudgetAdvice = _aiBudgetAdvice.asStateFlow()
 
     fun setDateFilter(filter: DateFilterType) {
         _selectedDateFilter.value = filter
@@ -318,29 +327,77 @@ class HisabViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // --- Receipt Scanner ---
-    fun simulateReceiptScan(imageUri: Uri?) {
+    // --- Receipt Scanner with Gemini Multimodal AI ---
+    fun scanReceiptWithGemini(imageUri: Uri?, context: Context) {
         _isScanning.value = true
         viewModelScope.launch(Dispatchers.IO) {
-            kotlinx.coroutines.delay(1200) // realistic OCR processing delay
-            val randomTotal = 1450.0
-            val receipt = ReceiptEntity(
-                id = UUID.randomUUID().toString(),
-                imageUri = imageUri?.toString() ?: "",
-                merchantName = "Meena Bazar / মিনা বাজার",
-                totalAmount = randomTotal,
-                dateString = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date()),
-                rawOcrText = "MEENA BAZAR\nDATE: ${SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())}\n1. RICE 5KG - 650 TK\n2. SOYBEAN OIL 2L - 380 TK\n3. EGGS 1 DOZ - 140 TK\n4. SPICES - 280 TK\nTOTAL: 1450 TK\nTHANK YOU FOR SHOPPING",
-                isProcessed = true
-            )
-            _scannedReceipt.value = receipt
-            repository.saveReceipt(receipt)
-            _isScanning.value = false
-            _uiToastMessage.value = "রসিদ স্ক্যান সফল হয়েছে!"
+            try {
+                var parsedTx: ParsedTransaction? = null
+                if (imageUri != null) {
+                    val stream = context.contentResolver.openInputStream(imageUri)
+                    val originalBitmap = BitmapFactory.decodeStream(stream)
+                    stream?.close()
+                    if (originalBitmap != null) {
+                        val maxDim = 1024
+                        val scaled = if (originalBitmap.width > maxDim || originalBitmap.height > maxDim) {
+                            val ratio = minOf(maxDim.toFloat() / originalBitmap.width, maxDim.toFloat() / originalBitmap.height)
+                            android.graphics.Bitmap.createScaledBitmap(originalBitmap, (originalBitmap.width * ratio).toInt(), (originalBitmap.height * ratio).toInt(), true)
+                        } else originalBitmap
+                        parsedTx = FirebaseAiService.analyzeReceiptImage(scaled)
+                    }
+                }
+
+                if (parsedTx != null) {
+                    val receipt = ReceiptEntity(
+                        id = UUID.randomUUID().toString(),
+                        imageUri = imageUri?.toString() ?: "",
+                        merchantName = parsedTx.shopName ?: "দোকান / সুপারশপ",
+                        totalAmount = parsedTx.totalAmount,
+                        dateString = parsedTx.date,
+                        rawOcrText = parsedTx.items.joinToString("\n") { "${it.itemName}: ৳${it.totalPrice}" },
+                        isProcessed = true
+                    )
+                    _scannedReceipt.value = receipt
+                    _scannedItems.value = parsedTx.items.map {
+                        TransactionItemEntity(
+                            id = UUID.randomUUID().toString(),
+                            transactionId = receipt.id,
+                            itemName = it.itemName,
+                            normalizedItemName = it.itemName.trim().lowercase(),
+                            quantity = it.quantity,
+                            unit = it.unit,
+                            unitPrice = it.unitPrice,
+                            totalPrice = it.totalPrice,
+                            categoryName = it.category
+                        )
+                    }
+                    repository.saveReceipt(receipt)
+                    _uiToastMessage.value = "Gemini AI দিয়ে রসিদ স্ক্যান সফল হয়েছে!"
+                } else {
+                    val curDate = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())
+                    val receipt = ReceiptEntity(
+                        id = UUID.randomUUID().toString(),
+                        imageUri = imageUri?.toString() ?: "",
+                        merchantName = "রসিদ / মেমো",
+                        totalAmount = 0.0,
+                        dateString = curDate,
+                        rawOcrText = "",
+                        isProcessed = true
+                    )
+                    _scannedReceipt.value = receipt
+                    _scannedItems.value = emptyList()
+                    repository.saveReceipt(receipt)
+                    _uiToastMessage.value = "রসিদের তথ্য যাচাই করে লেনদেন যোগ করুন"
+                }
+            } catch (e: Exception) {
+                _uiToastMessage.value = "রসিদ স্ক্যানে সমস্যা হয়েছে। আবার চেষ্টা করুন।"
+            } finally {
+                _isScanning.value = false
+            }
         }
     }
 
-    fun saveReceiptAsTransaction(receipt: ReceiptEntity) {
+    fun saveReceiptAsTransaction(receipt: ReceiptEntity, customItems: List<TransactionItemEntity>? = null) {
         viewModelScope.launch(Dispatchers.IO) {
             val defaultAcc = accounts.value.firstOrNull { it.isDefault } ?: accounts.value.firstOrNull()
             val txEntity = TransactionEntity(
@@ -353,73 +410,130 @@ class HisabViewModel(application: Application) : AndroidViewModel(application) {
                 categoryName = "Groceries",
                 totalAmount = receipt.totalAmount,
                 currency = "BDT",
-                paymentMethod = "Cash",
+                paymentMethod = defaultAcc?.name ?: "Cash",
                 notes = "রসিদ স্ক্যান থেকে যুক্ত (Receipt #${receipt.id.take(6)})",
                 source = TransactionSource.RECEIPT_SCANNER.name
             )
 
-            val items = listOf(
-                TransactionItemEntity(
-                    id = UUID.randomUUID().toString(),
-                    transactionId = txEntity.id,
-                    itemName = "চাল / Rice 5kg",
-                    normalizedItemName = "চাল",
-                    quantity = 5.0,
-                    unit = "kg",
-                    unitPrice = 130.0,
-                    totalPrice = 650.0,
-                    categoryName = "Groceries"
-                ),
-                TransactionItemEntity(
-                    id = UUID.randomUUID().toString(),
-                    transactionId = txEntity.id,
-                    itemName = "সয়াবিন তেল / Oil 2L",
-                    normalizedItemName = "তেল",
-                    quantity = 2.0,
-                    unit = "liter",
-                    unitPrice = 190.0,
-                    totalPrice = 380.0,
-                    categoryName = "Groceries"
-                ),
-                TransactionItemEntity(
-                    id = UUID.randomUUID().toString(),
-                    transactionId = txEntity.id,
-                    itemName = "ডিম / Eggs (1 Dozen)",
-                    normalizedItemName = "ডিম",
-                    quantity = 12.0,
-                    unit = "pcs",
-                    unitPrice = 11.66,
-                    totalPrice = 140.0,
-                    categoryName = "Groceries"
-                ),
-                TransactionItemEntity(
-                    id = UUID.randomUUID().toString(),
-                    transactionId = txEntity.id,
-                    itemName = "মসলা ও টুকিটাকি",
-                    normalizedItemName = "মসলা",
-                    quantity = 1.0,
-                    unit = "packet",
-                    unitPrice = 280.0,
-                    totalPrice = 280.0,
-                    categoryName = "Groceries"
+            val itemsToSave = customItems ?: _scannedItems.value.ifEmpty {
+                listOf(
+                    TransactionItemEntity(
+                        id = UUID.randomUUID().toString(),
+                        transactionId = txEntity.id,
+                        itemName = receipt.merchantName,
+                        normalizedItemName = receipt.merchantName.trim().lowercase(),
+                        quantity = 1.0,
+                        unit = "memo",
+                        unitPrice = receipt.totalAmount,
+                        totalPrice = receipt.totalAmount,
+                        categoryName = "Groceries"
+                    )
                 )
-            )
+            }
 
-            repository.saveFullTransaction(txEntity, items)
+            repository.saveFullTransaction(txEntity, itemsToSave)
             _scannedReceipt.value = null
+            _scannedItems.value = emptyList()
             _uiToastMessage.value = "রসিদের লেনদেন সংরক্ষিত হয়েছে!"
         }
     }
 
     fun clearScannedReceipt() {
         _scannedReceipt.value = null
+        _scannedItems.value = emptyList()
     }
 
-    // --- CRUD Operations ---
+    fun deleteReceipt(id: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            repository.deleteReceipt(id)
+            _uiToastMessage.value = "রসিদ মুছে ফেলা হয়েছে"
+        }
+    }
+
+    // --- Financial Advisor Logic ---
+    fun refreshAiBudgetAdvice() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val cal = Calendar.getInstance()
+            val totalDays = cal.getActualMaximum(Calendar.DAY_OF_MONTH)
+            val currentDay = cal.get(Calendar.DAY_OF_MONTH)
+            val remainingDays = maxOf(1, totalDays - currentDay + 1)
+
+            val curM = cal.get(Calendar.MONTH)
+            val curY = cal.get(Calendar.YEAR)
+
+            val thisMonthExpenses = transactions.value.filter { tx ->
+                val txCal = Calendar.getInstance().apply { timeInMillis = tx.transaction.transactionDate }
+                txCal.get(Calendar.MONTH) == curM && txCal.get(Calendar.YEAR) == curY && tx.transaction.transactionType == TransactionType.EXPENSE.name
+            }
+
+            val spentThisMonth = thisMonthExpenses.sumOf { it.transaction.totalAmount }
+            val monthlyBudget = profile.value?.monthlyBudget ?: 35000.0
+            val remainingBudget = monthlyBudget - spentThisMonth
+            val dailySafeBudget = if (remainingDays > 0) maxOf(0.0, remainingBudget / remainingDays) else 0.0
+
+            val todaySpent = thisMonthExpenses.filter { tx ->
+                val txCal = Calendar.getInstance().apply { timeInMillis = tx.transaction.transactionDate }
+                txCal.get(Calendar.DAY_OF_MONTH) == currentDay
+            }.sumOf { it.transaction.totalAmount }
+
+            val topCategory = thisMonthExpenses.groupBy { it.transaction.categoryName ?: "Other" }
+                .maxByOrNull { entry -> entry.value.sumOf { it.transaction.totalAmount } }?.key
+
+            val advice = FirebaseAiService.generateBudgetAdvice(
+                monthlyBudget = monthlyBudget,
+                spentThisMonth = spentThisMonth,
+                remainingDays = remainingDays,
+                dailySafeBudget = dailySafeBudget,
+                todaySpent = todaySpent,
+                topCategory = topCategory
+            )
+            _aiBudgetAdvice.value = advice
+        }
+    }
+
+    // --- Complete CRUD Editing & Deleting Operations ---
+    fun updateExistingTransaction(tx: TransactionEntity, items: List<TransactionItemEntity>) {
+        viewModelScope.launch(Dispatchers.IO) {
+            repository.updateFullTransaction(tx, items)
+            _uiToastMessage.value = "লেনদেন সফলভাবে আপডেট করা হয়েছে"
+        }
+    }
+
     fun deleteTransaction(id: String) {
         viewModelScope.launch(Dispatchers.IO) {
             repository.deleteTransaction(id)
             _uiToastMessage.value = "লেনদেন মুছে ফেলা হয়েছে"
+        }
+    }
+
+    fun deleteItemByNormalizedName(normalizedName: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            repository.deleteItemsByNormalizedName(normalizedName)
+            _uiToastMessage.value = "পণ্যটি মুছে ফেলা হয়েছে"
+        }
+    }
+
+    fun updateShop(shop: ShopEntity) {
+        viewModelScope.launch(Dispatchers.IO) {
+            repository.saveShop(shop)
+            _uiToastMessage.value = "দোকানের তথ্য আপডেট করা হয়েছে"
+        }
+    }
+
+    fun updateAccount(account: AccountEntity) {
+        viewModelScope.launch(Dispatchers.IO) {
+            repository.saveAccount(account)
+            _uiToastMessage.value = "একাউন্ট আপডেট করা হয়েছে"
+        }
+    }
+
+    fun clearAllUserData() {
+        viewModelScope.launch(Dispatchers.IO) {
+            repository.clearAllFinancialData()
+            _pendingTransaction.value = null
+            _scannedReceipt.value = null
+            _scannedItems.value = emptyList()
+            _uiToastMessage.value = "সকল ডাটা মুছে ফেলা হয়েছে"
         }
     }
 

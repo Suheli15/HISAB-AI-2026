@@ -23,6 +23,7 @@ import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Info
@@ -143,6 +144,7 @@ fun MetricCard(
 fun TransactionRow(
     txWithItems: TransactionWithItems,
     currencySymbol: String = "৳",
+    onEdit: (() -> Unit)? = null,
     onDelete: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
@@ -317,24 +319,43 @@ fun TransactionRow(
                         )
                     }
 
-                    if (onDelete != null) {
+                    if (onDelete != null || onEdit != null) {
                         Spacer(modifier = Modifier.height(8.dp))
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.End
+                            horizontalArrangement = Arrangement.End,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            IconButton(
-                                onClick = onDelete,
-                                modifier = Modifier
-                                    .size(36.dp)
-                                    .testTag("delete_tx_${tx.id}")
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Delete,
-                                    contentDescription = "Delete Transaction",
-                                    tint = ExpenseRose,
-                                    modifier = Modifier.size(18.dp)
-                                )
+                            if (onEdit != null) {
+                                IconButton(
+                                    onClick = onEdit,
+                                    modifier = Modifier
+                                        .size(36.dp)
+                                        .testTag("edit_tx_${tx.id}")
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Edit,
+                                        contentDescription = "Edit Transaction",
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(8.dp))
+                            }
+                            if (onDelete != null) {
+                                IconButton(
+                                    onClick = onDelete,
+                                    modifier = Modifier
+                                        .size(36.dp)
+                                        .testTag("delete_tx_${tx.id}")
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Delete,
+                                        contentDescription = "Delete Transaction",
+                                        tint = ExpenseRose,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
                             }
                         }
                     }

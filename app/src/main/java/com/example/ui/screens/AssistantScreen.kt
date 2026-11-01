@@ -21,10 +21,14 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.border
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Psychology
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Send
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -59,9 +63,14 @@ fun AssistantScreen(
 ) {
     val chatHistory by viewModel.assistantChat.collectAsState()
     val isThinking by viewModel.isAssistantThinking.collectAsState()
+    val aiBudgetAdvice by viewModel.aiBudgetAdvice.collectAsState()
 
     var queryInput by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
+
+    LaunchedEffect(Unit) {
+        viewModel.refreshAiBudgetAdvice()
+    }
 
     LaunchedEffect(chatHistory.size, isThinking) {
         if (chatHistory.isNotEmpty()) {
@@ -109,6 +118,48 @@ fun AssistantScreen(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+            }
+        }
+
+        // Live Budget Advisor Banner
+        if (!aiBudgetAdvice.isNullOrBlank()) {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 6.dp)
+                    .border(1.dp, EmeraldDark.copy(alpha = 0.3f), RoundedCornerShape(14.dp)),
+                shape = RoundedCornerShape(14.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f))
+            ) {
+                Row(
+                    modifier = Modifier.padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.AutoAwesome,
+                        contentDescription = null,
+                        tint = EmeraldDark,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Text(
+                        text = aiBudgetAdvice ?: "",
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.weight(1f),
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    IconButton(
+                        onClick = { viewModel.refreshAiBudgetAdvice() },
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Refresh,
+                            contentDescription = "Refresh",
+                            tint = EmeraldDark,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                }
             }
         }
 

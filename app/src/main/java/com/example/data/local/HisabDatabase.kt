@@ -82,12 +82,12 @@ abstract class HisabDatabase : RoomDatabase() {
                 )
             )
 
-            // Default Accounts
+            // Clean initial accounts (Zero balance - no fake demo data)
             val defaultAccounts = listOf(
-                AccountEntity(id = "acc_cash", name = "Cash / নগদ", type = "CASH", balance = 12500.0, isDefault = true),
-                AccountEntity(id = "acc_bkash", name = "bKash", type = "BKASH", balance = 8450.0),
-                AccountEntity(id = "acc_nagad", name = "Nagad", type = "NAGAD", balance = 3200.0),
-                AccountEntity(id = "acc_bank", name = "Bank Account (City Bank)", type = "BANK", balance = 65000.0)
+                AccountEntity(id = "acc_cash", name = "Cash / নগদ", type = "CASH", balance = 0.0, isDefault = true),
+                AccountEntity(id = "acc_bkash", name = "bKash", type = "BKASH", balance = 0.0),
+                AccountEntity(id = "acc_nagad", name = "Nagad", type = "NAGAD", balance = 0.0),
+                AccountEntity(id = "acc_bank", name = "Bank Account", type = "BANK", balance = 0.0)
             )
             for (acc in defaultAccounts) {
                 dao.insertAccount(acc)
